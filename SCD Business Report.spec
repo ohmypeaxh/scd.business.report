@@ -1,6 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+import sys
 
-a = Analysis(['main.py'], pathex=['src'], binaries=[], datas=[], hiddenimports=[],
+python_root = Path(sys.base_prefix)
+tk_binaries = [
+    (str(python_root / 'DLLs' / '_tkinter.pyd'), '.'),
+    (str(python_root / 'DLLs' / 'tcl86t.dll'), '.'),
+    (str(python_root / 'DLLs' / 'tk86t.dll'), '.'),
+]
+tk_datas = [
+    (str(python_root / 'tcl' / 'tcl8.6'), 'tcl/tcl8.6'),
+    (str(python_root / 'tcl' / 'tk8.6'), 'tcl/tk8.6'),
+]
+
+a = Analysis(['main.py'], pathex=['src'], binaries=tk_binaries, datas=tk_datas, hiddenimports=['tkinter'],
              hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=[], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='SCD Business Report',
