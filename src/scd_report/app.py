@@ -5,18 +5,24 @@ from pathlib import Path
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from .aggregator import build_report
+from .windows import create_desktop_shortcut, resource_path
 
 
-class SCDApp(tk.Tk):
+class SCDApp(TkinterDnD.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("SCD Business Report")
         self.geometry("760x330")
         self.minsize(680, 300)
         self._vars = [tk.StringVar() for _ in range(3)]
+        icon = resource_path("scd.ico")
+        if icon.exists():
+            self.iconbitmap(default=str(icon))
         self._build()
+        threading.Thread(target=self._create_shortcut, daemon=True).start()
 
     def _build(self) -> None:
         frame = ttk.Frame(self, padding=24)
@@ -27,7 +33,10 @@ class SCDApp(tk.Tk):
         commands = [self._choose_folder, self._choose_template, self._choose_output]
         for row, (label, command, var) in enumerate(zip(labels, commands, self._vars), 1):
             ttk.Label(frame, text=label, width=16).grid(row=row, column=0, sticky="w", pady=7)
-            ttk.Entry(frame, textvariable=var).grid(row=row, column=1, sticky="ew", padx=8)
+            entry = ttk.Entry(frame, textvariable=var)
+            entry.grid(row=row, column=1, sticky="ew", padx=8)
+            entry.drop_target_register(DND_FILES)
+            entry.dnd_bind("<<Drop>>", lambda event, index=row - 1: self._drop(event, index))
             ttk.Button(frame, text="선택", command=command, width=10).grid(row=row, column=2)
         self.run_button = ttk.Button(frame, text="자동취합 실행", command=self._run)
         self.run_button.grid(row=4, column=0, columnspan=3, pady=(25, 10), ipadx=35, ipady=8)
@@ -35,16 +44,45 @@ class SCDApp(tk.Tk):
         self.status.grid(row=5, column=0, columnspan=3)
         frame.columnconfigure(1, weight=1)
 
+    def _create_shortcut(self) -> None:
+        try:
+            create_desktop_shortcut()
+        except Exception:
+            # Shortcut creation must never prevent the report program from opening.
+            pass
+
+    def _drop(self, event, index: int) -> None:
+        paths = [Path(value) for value in self.tk.splitlist(event.data)]
+        if not paths:
+            return
+        path = paths[0]
+        if index == 0:
+            self._vars[0].set(str(path if path.is_dir() else path.parent))
+        elif index == 1:
+            if path.suffix.lower() != ".xlsx":
+                messagebox.showwarning("파일 확인", "전체용 엑셀 입력란에는 .xlsx 파일을 놓아 주세요.")
+                return
+            self._set_template(path)
+        else:
+            if path.is_dir():
+                path = path / f"SCD_전체업무보고_{datetime.now():%Y%m%d}.xlsx"
+            elif path.suffix.lower() != ".xlsx":
+                path = path.with_suffix(".xlsx")
+            self._vars[2].set(str(path))
+
+    def _set_template(self, path: Path) -> None:
+        self._vars[1].set(str(path))
+        if not self._vars[2].get():
+            name = f"SCD_전체업무보고_{datetime.now():%Y%m%d}.xlsx"
+            self._vars[2].set(str(path.with_name(name)))
+
     def _choose_folder(self) -> None:
         if value := filedialog.askdirectory(title="팀원업무 폴더 선택"):
             self._vars[0].set(value)
 
     def _choose_template(self) -> None:
         if value := filedialog.askopenfilename(title="전체용 엑셀 선택", filetypes=[("Excel", "*.xlsx")]):
-            self._vars[1].set(value)
-            if not self._vars[2].get():
-                name = f"SCD_전체업무보고_{datetime.now():%Y%m%d}.xlsx"
-                self._vars[2].set(str(Path(value).with_name(name)))
+            self._set_template(Path(value))
 
     def _choose_output(self) -> None:
         if value := filedialog.asksaveasfilename(title="결과 저장위치", defaultextension=".xlsx",
